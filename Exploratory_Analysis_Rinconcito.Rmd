@@ -1,0 +1,64 @@
+---
+title: "Environmental Metrics in the Historic Westside"
+author: "Esteban Lopez"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(plotly)
+library(sf)
+library(mapview)
+```
+
+## Connect 2023 Project
+
+
+
+```{r}
+# read & data
+
+sensor_1out<-fread("../../Sensors/PurpleAir Download Casa de Cuentos/161701 2024-03-01 2024-04-13 10-Minute Average.csv")
+sensor_1out[,sensorID:=161701]
+sensor_1in<-fread("../../Sensors/PurpleAir Download Casa de Cuentos/207349 2024-03-01 2024-04-13 10-Minute Average.csv")
+sensor_1in[,sensorID:=207349]
+
+sensors<-rbind(sensor_1in,sensor_1out)
+
+sensors<-melt(sensors,id.vars = c("sensorID","time_stamp"))
+
+sensors[,month:=month(time_stamp)]
+sensors[,day:=mday(time_stamp)]
+sensors[,wday:=wday(time_stamp)]
+sensors[,hour:=hour(time_stamp)]
+sensors[,minute:=minute(time_stamp)]
+
+sensors[,sensorID:=factor(sensorID,levels=c(161701,207349),labels = c("Rinconcito - Outside","Rinconcito - Inside"))]
+
+```
+
+## Plotting the data
+
+You can also embed plots, for example:
+
+```{r , echo=FALSE}
+
+ggplot(data=sensors[variable=="temperature"],aes(x=hour,  y= wday,fill= value))+
+  geom_tile()+
+  scale_fill_viridis_c()+
+  facet_wrap(~sensorID)
+  
+
+ggplot(data=sensors[variable=="temperature"&month==3,],aes(x=time_stamp, y=value,color=sensorID))+
+  geom_line()
+
+
+ggplot(data=sensors[variable=="pm10.0_atm"&month==3,],aes(x=factor(wday), y=value,color=sensorID))+
+  geom_boxplot()
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
