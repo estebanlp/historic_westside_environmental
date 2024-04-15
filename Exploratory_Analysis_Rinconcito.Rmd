@@ -12,6 +12,7 @@ library(ggplot2)
 library(plotly)
 library(sf)
 library(mapview)
+library(ggpubr)
 ```
 
 ## Connect 2023 Project
@@ -37,7 +38,7 @@ sensors[,hour:=hour(time_stamp)]
 sensors[,minute:=minute(time_stamp)]
 
 sensors[,sensorID:=factor(sensorID,levels=c(161701,207349),labels = c("Rinconcito - Outside","Rinconcito - Inside"))]
-
+sensors[,wday:=factor(wday,levels=c(1:7),labels = c("Sun","Mon","Tue","Wed","Thr","Fri","Sat"))]
 ```
 
 ## Plotting the data
@@ -56,8 +57,17 @@ ggplot(data=sensors[variable=="temperature"&month==3,],aes(x=time_stamp, y=value
   geom_line()
 
 
-ggplot(data=sensors[variable=="pm10.0_atm"&month==3,],aes(x=factor(wday), y=value,color=sensorID))+
-  geom_boxplot()
+ggplot(data=sensors[variable=="temperature"&month==3,],aes(x=wday, y=value,color=sensorID))+
+  geom_boxplot(outlier.alpha = 0.3)
+
+ggplot(data=sensors[month==3,],aes(x=wday, y=value,color=sensorID))+
+  geom_boxplot(outlier.alpha = 0.3)+
+  facet_wrap(~variable,scales = "free_y")
+
+ggboxplot(data=sensors[month==3,], x = "wday", y = "value",
+          color = "sensorID", palette = "jco",facet.by = "variable",scales="free_y")+
+  stat_compare_means(aes(group=sensorID),label = "p.signif",label.y.npc = "top")      
+
 
 ```
 
