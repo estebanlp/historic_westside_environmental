@@ -1,0 +1,185 @@
+---
+title: "PA_Private_Download"
+author: "Christina Kastely"
+date: "2024-06-26"
+output: html_document
+---
+
+## This script was adapted from a script created by xxxx
+
+```{r load in packages}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("readr")
+#install.packages("lubridate")
+#install.packages("httr")
+
+#setwd("C:/Users/sdiva/OneDrive/Desktop/R data/Air-Quality-Code")
+
+
+#setwd("C:\Users\sdiva\OneDrive\Desktop\R data\Air-Quality-Code")
+
+library(tidyverse)
+library(lubridate)
+library(readr) 
+library(httr) 
+```
+
+
+
+```{r set data path}
+data_path <- "C:/Users/tbp922/OneDrive - University of Texas at San Antonio (1)/PA_RawData/"
+path <- "C:/Users/tbp922/OneDrive - University of Texas at San Antonio (1)/Desktop/RProjects/Air-Quality-Code/"
+```
+
+## Purpose/API keys
+
+The purpose of this script is to pull the most recent 2 weeks of data from a list of sensors and then compile it over time. You need to get a "read" key to download data. You can also get a "write key" to alter data, but this will be used less often. Contact purpleair support at contact@purpleair.com to request your API keys. The historical endpoint was recently restricted, so you may specifically need to ask for access to it.
+
+```{r purple air API keys}
+read_key <- "6FCF1BC1-141B-11ED-8561-42010A800005"
+write_key <- "6FCFAE10-141B-11ED-8561-42010A800005"
+```
+
+## Getting Sensor Indicies and Private Read Keys
+
+You need to locate the sensor index number to retrieve data. This is different from the device ID (For example Device ID at Picks Bar: 98:CD:AC:10:8E:E9) 
+
+To find the sensor index number, open the purple air map, and find the map marker for your sensor. If this is a private sensor, you must use the map link from the install email to see this sensor on the map. Then, hover mouse over “get this widget” and then copy the URL to a text document. The 4-6 digit number following “PurpleAirWidget_” is the sensor index number that you will use to retrieve data.  
+
+The above instructions are the same for private or public sensors. However, for private sensors you must also find the private read key. You can find this in the email you received when you first installed the sensor in the useful links section where it mentions the download data link. In that like the index in the 6 digit number that follows "show" in the url and the key is the 16 character string following "key" in the url.  
+
+Create an excel file with a name like "sensor_index_name.xlsx" with column headers "sensor_index", "read_key", "name_on_map".
+
+```{r sensor list}
+library(readxl)
+sensorindex_name <- data.frame(read_excel(paste0(path, "SensorInfo/sensor_index_name.xlsx"), sheet = "Air_locations_PM_all"))
+sensorindex_name <- na.omit(sensorindex_name) #na.omit seems to work only on data frames, not lists so this step must come first, need to update worksheet
+
+sensor_list <- as.list(sensorindex_name$sensor_index)
+sensor_key <- as.list(sensorindex_name$read_key)
+
+# <- c("latitute" , "longitude","humidity","temperature","pressure","rssi","pm2.5_atm","pm2.5_alt","pm2.5_cf_1")
+```
+
+
+```{r change time frame}
+#choose/convert start and end time to unix timestamp, can confirm by using https://www.epochconverter.com/
+
+starttime <- as.POSIXct("2023-07-01 00:00:00", tz = "America/Chicago")
+# Convert to Unix timestamp
+starttime <- as.numeric(starttime)
+
+endtime <- as.POSIXct("2023-07-31 00:00:00", tz = "America/Chicago") # plug in the day after you want data for, so for example if I want date up until midnight on 2024-09-30, I will plug in 2024-10-01 00:00:00
+# Convert to Unix timestamp
+endtime <- as.numeric(endtime)
+
+#starttime <- 1723784400
+#endtime <- 1725080400 #as.integer(Sys.time())
+#OneWk <- (604800) #604800 is the number of units the unix timestamp elapses in one week
+#OneD <- (86400)
+#1710781200
+```
+
+
+## Manipulating the URL
+
+The URL should include the API read key, the sensor id, the field names of the data you are interested in, and the time span. This code makes the end time the current time and the start time 2 weeks before the end time. Two weeks is the max time period you can request at one time for hourly data. (ASK KB WHAT TIME resolution we want.)
+
+```{r URL}
+#URL <- "https://api.purpleair.com/v1/sensors/sensor_index/history/csv?start_timestamp=starttime&end_timestamp=endtime&average=60&fields=pm2.5_cf_1_a%2C%20pm2.5_cf_1_b%2Cpm2.5_atm_a%2C%20pm2.5_atm_b%2Cpm2.5_alt_a%2Cpm2.5_alt_b%2Chumidity%2Ctemperature%2Cpressure%2Cuptime%2Crssi%2Cpa_latency%2Cmemory" original
+
+#URL <- "https://api.purpleair.com/v1/sensors/sensor_index/history/csv?start_timestamp=starttime&end_timestamp=endtime&fields=a_fields"
+#Fields added in later
+
+
+URL <- "https://api.purpleair.com/v1/sensors/sensor_index/history/csv?read_key=sensor_key&start_timestamp=starttime&end_timestamp=endtime&average=0&fields=pm2.5_alt_a%2Cpm2.5_alt_b%2Chumidity%2Ctemperature%2Cpressure%2Crssi"
+
+
+#URL <- "https://api.purpleair.com/v1/sensors/sensor_index/history/csv?read_key=sensor_key&start_timestamp=starttime&end_timestamp=endtime&average=0&fields=pm2.5_atm_a%2C%20pm2.5_atm_b%2Chumidity%2Ctemperature%2Cpressure%2Crssi"
+##this one is the original with onth pm2.5atm fields, may come back to
+#no avg
+#need to add other PM measurement
+
+
+URL <- sub('starttime', starttime, URL)
+URL <- sub('endtime', endtime, URL)
+#URL <- sub('a_fields', a_fields, URL)
+
+
+#sensor_key <- sensor_key[1:5]
+#sensor_list <- sensor_list[1:5]
+```
+
+## Sensor_index over the URL, writing output to text files
+
+This does preserve each request as a unique text file. PurpleAir support has asked that you send no more than one request every 1-10 minutes hence there is a forced pause in the code.
+
+```{r URL Loop}
+for (i in 1:length(sensor_list))
+{
+  request_URL <- sub('sensor_index', sensor_list[i], URL)
+  request_URL <- sub('sensor_key', sensor_key[i], request_URL)
+  data <- GET(request_URL,add_headers('X-API-Key'=read_key))
+  data <- content(data, "raw")
+  writeBin(data, paste(sensor_list[i],starttime, endtime,".txt", sep="_"))
+  flush.console() #this makes sys.sleep work in a loop?
+  Sys.sleep(1) 
+}
+
+```
+
+## Reading in the files
+
+```{r read files}
+outputdata_list <- list.files(path=path, pattern=paste0(starttime,"_",endtime,"_.txt"))
+for (i in 1:length(outputdata_list)){
+  assign(outputdata_list[i], 
+         read.table(outputdata_list[i], sep=",", header=TRUE)
+  )}
+```
+
+# Merging the imported data frames
+The time conversion automatically makes it the current timezone according to R in my script, I adjust R's timezone to EST so it matches our regulatory monitors. You don't have to worry about converting from UTC (default time zone in PA data).
+
+```{r merge files}
+sensor_history <- do.call(rbind.data.frame, mget(ls(pattern = paste0(starttime,"_",endtime))))
+#ls() function lists all objects in the current R environment.
+#mget() function retrieves multiple objects by their names.
+#do.call() applies a function to the elements of a list.
+#row.names(sensor_history1) <- NULL #removes unuseful row numbers
+#sensor_history$time_stamp <- as.POSIXct(sensor_history$time_stamp, origin="1970-01-01") #better datetime format
+#sensor_history <- unique(sensor_history) #removes overlapping days, don't have to worry about getting data exactly once every 2 weeks
+sensor_history <- merge(sensor_history, sensorindex_name[, c("sensor_index", "name_on_map", "Location")], by="sensor_index") #adds name on map to merged df
+sensor_history <- sensor_history[c("time_stamp", "sensor_index", "name_on_map", "rssi", "humidity", "temperature", "pressure", "pm2.5_alt_a", "pm2.5_alt_b", "Location")] #rearranging columns
+```
+
+# reorg data by time stamp
+XXX
+
+```{r reorg data}
+reorg_sensor<- sensor_history %>%
+  group_by(sensor_index) %>%
+  arrange(time_stamp, .by_group = TRUE)
+
+#saving the merged file for further analysis
+ST <- as.POSIXct(starttime, origin="1970-01-01")
+ET <- as.POSIXct(endtime-86400, origin="1970-01-01")
+
+Stime <- paste0(month(ST), day(ST), year(ST))
+Etime <- paste0(month(ET), day(ET), year(ET))
+
+write.csv(reorg_sensor,file=paste0(data_path,Stime,"_",Etime,".csv"), row.names = FALSE)
+
+file.remove(outputdata_list)
+
+rm(list = outputdata_list)
+```
+
+```{r initial vis- time series}
+ggplot(data=reorg_sensor, mapping = aes(x=time_stamp, y = pm2.5_alt_a, color = name_on_map)) +
+  geom_line(aes(group=sensor_index)) +
+  xlab("Date") +
+  ylab("[PM2.5], ug/m3")+
+  labs(color="Location")
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
